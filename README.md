@@ -1,96 +1,27 @@
-# opencode-api-tracer
+# opencode-api-tracer 使用手册
 
-`opencode-api-tracer` 是一个 OpenCode 本地插件，用来记录 OpenCode 运行过程中发出的 LLM API 请求和响应，并把数据写成 JSONL 文件。它的用途类似 `cchistory` / `claude-trace` 这一类工具：不改 OpenCode 源码，通过插件注入，在运行时观察 API 流量。
+`opencode-api-tracer` 是一个 OpenCode 插件，用来记录 OpenCode 运行过程中发出的 LLM API 请求和响应，并输出为 JSONL 文件。
 
-当前是第一阶段版本，只记录 API 请求、响应和错误。文件操作、shell 命令、工具事件、子 agent 事件会放到后续阶段。
+npm 包地址：<https://www.npmjs.com/package/opencode-api-tracer>
 
-## 功能
+当前版本只记录 API 请求、响应和错误；不记录文件操作、shell 命令或工具事件。
 
-- 记录 OpenCode 发出的 LLM API 请求。
-- 记录 API 响应，包括普通 JSON 和 SSE 流。
-- 每个 session 输出一个 JSONL 文件，方便后续分析。
-- 自动脱敏敏感 header，例如 `authorization`、`x-api-key`、cookie、token。
-- 提供一个终端交互查看器，可以选择 session、筛选请求、响应和错误、查看 payload。
-
-## 完整使用流程
-
-这条链路覆盖从发布插件到查看请求响应的完整过程：
-
-1. 发布 npm 包。
-2. 用 OpenCode 插件机制引用这个 npm 包。
-3. 执行一次 OpenCode agent。
-4. 插件在运行过程中输出 JSONL 日志。
-5. 在终端打开交互查看器，查看 API 请求和响应。
-
-## 发布 npm 包
-
-发布前先确认包内容和测试：
-
-```bash
-npm test
-npm run typecheck
-npm pack --dry-run
-```
-
-确认 npm 已登录：
-
-```bash
-npm whoami --registry=https://registry.npmjs.org/
-```
-
-如果没有登录，先执行：
-
-```bash
-npm login --registry=https://registry.npmjs.org/
-```
-
-发布：
-
-```bash
-npm publish --registry=https://registry.npmjs.org/
-```
-
-这个包配置了发布保护：
-
-- `prepublishOnly`：发布前自动执行测试和类型检查。
-- `prepack`：打包前自动构建 `dist`。
-
-## 工作方式
-
-插件被 OpenCode 加载后，会包装 `globalThis.fetch`：
-
-```ts
-globalThis.fetch = (input, init) => tracedFetch(originalFetch, writer, input, init)
-```
-
-每次请求进入包装层后，插件会检查请求 header 里是否存在 OpenCode session 标记：
-
-- `x-opencode-session`
-- `x-session-affinity`
-- `session_id`
-
-没有这些 session 标记的请求会直接放行，不记录。命中的请求会被 clone 后读取 body，再继续交给原始 `fetch`，所以不会消费 OpenCode 自己要使用的请求或响应流。
-
-## 安装插件
-
-发布到 npm 后，通过 OpenCode 的插件命令安装：
+## 1. 安装插件
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \
 opencode plugin opencode-api-tracer --global
 ```
 
-这会安装 npm 包并更新 OpenCode 配置。
+安装完成后，OpenCode 会把插件写入全局配置文件：
 
-## 配置 OpenCode 插件
-
-编辑 OpenCode 配置文件：
-
-```bash
+```text
 ~/.config/opencode/opencode.json
 ```
 
-推荐配置方式是直接在插件参数里写输出目录：
+## 2. 配置输出目录
+
+推荐在 `opencode.json` 里配置 JSONL 输出目录：
 
 ```json
 {
@@ -99,80 +30,111 @@ opencode plugin opencode-api-tracer --global
     [
       "opencode-api-tracer",
       {
-        "dir": "/tmp/opencode-api-tracer-test"
+        "dir": "/tmp/opencode-api-tracer"
       }
     ]
   ]
 }
 ```
 
-如果你不想写 `dir` 参数，也可以只配置插件路径：
+如果只写插件名：
 
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
   "plugin": ["opencode-api-tracer"]
 }
 ```
 
-这种情况下默认输出到：
+默认会输出到：
 
 ```text
 ~/opencode-api-tracer
 ```
 
-也可以在单次命令里用环境变量覆盖输出目录：
+也可以用环境变量临时指定目录：
 
 ```bash
-OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer-test \
+OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer \
 opencode run "Reply exactly: OK"
 ```
 
-## 快速试用
+## 3. 执行 OpenCode
 
-先清空测试输出目录：
-
-```bash
-rm -rf /tmp/opencode-api-tracer-test
-```
-
-运行一条 OpenCode 命令：
+运行一次 agent：
 
 ```bash
-OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer-test \
 opencode run "Reply exactly: OK"
 ```
 
-也可以指定模型执行：
+如果想指定模型：
 
 ```bash
-OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer-test \
 opencode run -m provider/model "Reply exactly: OK"
 ```
 
-确认 JSONL 文件已经生成：
+运行过程中，插件会把 API 请求和响应写入配置的目录。
+
+确认是否生成日志：
 
 ```bash
-ls -la /tmp/opencode-api-tracer-test
+ls -la /tmp/opencode-api-tracer
 ```
 
-正常情况下会看到类似：
+正常会看到 `.jsonl` 文件，例如：
 
 ```text
-2026-04-25-10-11-56-Reply exactly OK.jsonl
+2026-04-25-10-41-09-Reply exactly OK.jsonl
 ```
 
-## JSONL 格式
+## 4. 查看请求和响应
 
-每一行是一条独立 JSON 记录。常见记录类型如下。
+使用内置终端查看器：
 
-请求记录示例：
+```bash
+npx --registry=https://registry.npmjs.org/ opencode-api-tracer /tmp/opencode-api-tracer
+```
+
+启动后会先列出 session，选择一个 session 后进入列表界面。
+
+查看器里可以做这些事：
+
+- 查看 API 请求。
+- 查看 API 响应。
+- 查看错误记录。
+- 筛选请求、响应和错误。
+- 查看 payload 大小。
+- 复制完整 payload 或选中的片段。
+
+常用参数：
+
+```bash
+# 只查看历史，不继续监听新日志
+npx --registry=https://registry.npmjs.org/ opencode-api-tracer /tmp/opencode-api-tracer --static
+
+# 直接打开指定 session
+npx --registry=https://registry.npmjs.org/ opencode-api-tracer /tmp/opencode-api-tracer --session ses_...
+
+# 包含标题生成等 meta 请求
+npx --registry=https://registry.npmjs.org/ opencode-api-tracer /tmp/opencode-api-tracer --include-meta
+```
+
+如果你已经全局安装过这个包，也可以直接运行：
+
+```bash
+opencode-api-radar /tmp/opencode-api-tracer
+```
+
+## 5. JSONL 内容
+
+每一行是一条 JSON 记录。
+
+请求示例：
 
 ```json
 {
   "kind": "request",
   "id": 1,
-  "timestamp": "2026-04-25T02:11:56.000Z",
+  "timestamp": "2026-04-25T02:41:09.000Z",
   "sessionID": "ses_...",
   "method": "POST",
   "url": "https://...",
@@ -184,13 +146,13 @@ ls -la /tmp/opencode-api-tracer-test
 }
 ```
 
-响应记录示例：
+响应示例：
 
 ```json
 {
   "kind": "response",
   "id": 1,
-  "timestamp": "2026-04-25T02:11:57.000Z",
+  "timestamp": "2026-04-25T02:41:10.000Z",
   "sessionID": "ses_...",
   "method": "POST",
   "url": "https://...",
@@ -201,13 +163,13 @@ ls -la /tmp/opencode-api-tracer-test
 }
 ```
 
-错误记录示例：
+错误示例：
 
 ```json
 {
   "kind": "error",
   "id": 1,
-  "timestamp": "2026-04-25T02:11:57.000Z",
+  "timestamp": "2026-04-25T02:41:10.000Z",
   "sessionID": "ses_...",
   "method": "POST",
   "url": "https://...",
@@ -215,98 +177,16 @@ ls -la /tmp/opencode-api-tracer-test
 }
 ```
 
-SSE 响应会被解析成：
+敏感 header 会被自动脱敏，例如：
 
-```json
-{
-  "body": {
-    "events": [
-      {
-        "event": "content_block_delta",
-        "data": {}
-      }
-    ]
-  }
-}
-```
+- `authorization`
+- `x-api-key`
+- cookie
+- token 类 header
 
-## 交互查看器
+## 6. 注意事项
 
-生成 JSONL 后，可以用内置查看器打开：
-
-```bash
-npx opencode-api-tracer /tmp/opencode-api-tracer-test
-```
-
-启动后会先扫描目录里的 JSONL，列出 session。选择一个 session 后进入 TUI 界面：
-
-- 左侧是事件列表。
-- 右侧是当前事件的 payload。
-- 顶部按钮可以筛选请求、响应和错误。
-- 请求记录会显示 payload 大小和相对上一条请求记录的增长量。
-- 支持复制完整 payload 或选中片段。
-
-常用参数：
-
-```bash
-# 只看历史，不继续轮询新数据
-npx opencode-api-tracer /tmp/opencode-api-tracer-test --static
-
-# 直接打开指定 session
-npx opencode-api-tracer /tmp/opencode-api-tracer-test --session ses_...
-
-# 包含标题生成等 meta 请求
-npx opencode-api-tracer /tmp/opencode-api-tracer-test --include-meta
-```
-
-如果你已经全局安装过这个包，也可以直接运行：
-
-```bash
-opencode-api-radar /tmp/opencode-api-tracer-test
-```
-
-查看器会自动检查 Python 依赖。如果缺少 `rich`、`textual`、`pygments` 或 `pyperclip`，会尝试用当前 Python 自动安装。
-
-## 开发
-
-如果你是在本仓库里开发插件，先安装依赖并构建：
-
-```bash
-npm install
-npm run build
-```
-
-常用命令：
-
-```bash
-npm test
-npm run typecheck
-python3 -m unittest discover -s scripts -p '*_test.py'
-```
-
-`npm test` 会执行：
-
-- TypeScript 构建。
-- Node.js 单元测试。
-- Python 查看器单元测试。
-
-## 项目结构
-
-```text
-src/index.ts                  OpenCode 插件入口
-src/tracer.ts                 fetch 包装层、JSONL 写入器、脱敏和解析逻辑
-src/*.test.ts                 TypeScript 测试
-scripts/opencode_api_radar.py JSONL 交互查看器
-scripts/*_test.py             Python 查看器测试
-```
-
-## 注意事项
-
-- JSONL 中会包含请求和响应 body。虽然 header 会脱敏，但 prompt、上下文、工具参数仍可能包含敏感信息。
-- 不建议把生成的 trace 文件提交到 git。
-- 当前版本只捕获带 OpenCode session header 的 `fetch` 请求。
-- 当前版本不记录 OpenCode 自身 log 里的 `FileOperationEvent`、shell 命令或工具事件。
-
-## 许可证
-
-MIT
+- JSONL 里会包含 prompt、上下文和响应内容，不要随便提交到 git。
+- 默认只记录带 OpenCode session 标记的请求。
+- 如果你使用 npm mirror，可能遇到版本同步延迟；安装和查看命令里指定 `https://registry.npmjs.org/` 最稳。
+- 查看器第一次运行时会检查 Python 依赖，缺少 `rich`、`textual`、`pygments` 或 `pyperclip` 时会尝试自动安装。

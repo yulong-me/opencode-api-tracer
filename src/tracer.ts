@@ -6,6 +6,7 @@ export type FetchImpl = (input: Request) => Promise<Response>
 
 export type TraceWriterOptions = {
   dir?: string
+  sessionID?: string
   now?: () => Date
 }
 
@@ -25,6 +26,7 @@ export type TraceRow = {
 }
 
 const SESSION_HEADERS = ["x-opencode-session", "x-session-affinity", "session_id"]
+const PROVIDER_HEADERS = ["authorization", "x-api-key", "api-key", "x-goog-api-key", "anthropic-version"]
 const SENSITIVE_HEADER = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token|x-access-token)$/i
 const SENSITIVE_HEADER_PART = /(token|secret|bearer|api[-_]?key)/i
 
@@ -43,6 +45,13 @@ export function getSessionID(headers: Headers): string | undefined {
     if (value) return value
   }
   return undefined
+}
+
+export function shouldTraceRequest(request: Request): boolean {
+  if (getSessionID(request.headers)) return true
+  if (request.method.toUpperCase() !== "POST") return false
+  if (!hasProviderHeader(request.headers)) return false
+  return isLikelyLLMEndpoint(request.url)
 }
 
 export function extractPromptFromRequestBody(value: unknown): string | undefined {
@@ -114,6 +123,7 @@ export function parseSSE(text: string): Array<{ event?: string; data: unknown }>
 
 export class TraceWriter {
   private readonly dir: string
+  private readonly fallbackSessionID: string
   private readonly now: () => Date
   private readonly files = new Map<string, string>()
   private readonly ids = new Map<string, number>()
@@ -124,7 +134,15 @@ export class TraceWriter {
       process.env.OPENCODE_API_TRACER_DIR ??
       process.env.OPENCODE_TRACE_DIR ??
       path.join(os.homedir(), "opencode-api-tracer")
+    this.fallbackSessionID =
+      options.sessionID ??
+      process.env.OPENCODE_API_TRACER_SESSION_ID ??
+      `run_${process.pid}_${Date.now().toString(36)}`
     this.now = options.now ?? (() => new Date())
+  }
+
+  sessionIDFor(request: Request): string | undefined {
+    return getSessionID(request.headers) ?? (shouldTraceRequest(request) ? this.fallbackSessionID : undefined)
   }
 
   nextID(sessionID: string): number {
@@ -153,7 +171,7 @@ export async function tracedFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const request = new Request(input, init)
-  const sessionID = getSessionID(request.headers)
+  const sessionID = writer.sessionIDFor(request)
   if (!sessionID) return fetchImpl(request)
 
   const requestText = await request.clone().text().catch(() => "")
@@ -240,6 +258,21 @@ function parseJSON(text: string): unknown | undefined {
   } catch {
     return undefined
   }
+}
+
+function hasProviderHeader(headers: Headers): boolean {
+  return PROVIDER_HEADERS.some((header) => !!headers.get(header))
+}
+
+function isLikelyLLMEndpoint(url: string): boolean {
+  const pathname = new URL(url).pathname.toLowerCase()
+  return (
+    pathname.endsWith("/messages") ||
+    pathname.endsWith("/chat/completions") ||
+    pathname.endsWith("/responses") ||
+    pathname.includes(":generatecontent") ||
+    pathname.includes(":streamgeneratecontent")
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

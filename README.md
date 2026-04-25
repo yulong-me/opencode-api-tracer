@@ -10,7 +10,7 @@ npm 包地址：<https://www.npmjs.com/package/opencode-api-tracer>
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \
-opencode plugin opencode-api-tracer --global
+opencode plugin opencode-api-tracer@0.1.3 --global --force
 ```
 
 安装完成后，OpenCode 会把插件写入全局配置文件：
@@ -28,7 +28,7 @@ opencode plugin opencode-api-tracer --global
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     [
-      "opencode-api-tracer",
+      "opencode-api-tracer@0.1.3",
       {
         "dir": "/tmp/opencode-api-tracer"
       }
@@ -41,7 +41,7 @@ opencode plugin opencode-api-tracer --global
 
 ```json
 {
-  "plugin": ["opencode-api-tracer"]
+  "plugin": ["opencode-api-tracer@0.1.3"]
 }
 ```
 
@@ -187,7 +187,9 @@ opencode-api-radar /tmp/opencode-api-tracer
 ## 6. 注意事项
 
 - JSONL 里会包含 prompt、上下文和响应内容，不要随便提交到 git。
-- 默认只记录带 OpenCode session 标记的请求。
+- OpenCode 1.3+ 通常会带真实 session 标记，JSONL 里的 `sessionID` 类似 `ses_...`。
+- OpenCode 1.2.x 的模型请求可能没有 session 标记，插件会用 `run_<pid>_<id>` 作为 fallback session。
+- 插件只记录带 OpenCode session 标记的请求，或明显像 LLM API 的 POST 请求；普通网页请求不会记录。
 - 如果你使用 npm mirror，可能遇到版本同步延迟；安装和查看命令里指定 `https://registry.npmjs.org/` 最稳。
 - 查看器第一次运行时会检查 Python 依赖，缺少 `rich`、`textual`、`pygments` 或 `pyperclip` 时会尝试自动安装。
 
@@ -209,13 +211,15 @@ fn5 is not a function
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \
-opencode plugin opencode-api-tracer --global --force
+opencode plugin opencode-api-tracer@0.1.3 --global --force
 ```
 
 确认配置里只保留 npm 包名，不要同时保留旧的本地 `file://...` 插件：
 
 ```json
 {
-  "plugin": ["opencode-api-tracer"]
+  "plugin": ["opencode-api-tracer@0.1.3"]
 }
 ```
+
+如果 OpenCode 1.2.x 能正常运行但没有生成 JSONL，请确认版本至少是 `0.1.3`。`0.1.2` 依赖 session header，而 OpenCode 1.2.x 的模型请求可能没有这个 header。

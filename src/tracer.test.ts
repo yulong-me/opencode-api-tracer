@@ -8,6 +8,7 @@ import {
   getSessionID,
   parseResponseBody,
   redactHeaders,
+  shouldTraceRequest,
   TraceWriter,
   tracedFetch,
 } from "./tracer.js"
@@ -31,6 +32,22 @@ test("getSessionID recognizes opencode session headers", () => {
   assert.equal(getSessionID(new Headers({ "x-session-affinity": "ses_b" })), "ses_b")
   assert.equal(getSessionID(new Headers({ session_id: "ses_c" })), "ses_c")
   assert.equal(getSessionID(new Headers({ "content-type": "application/json" })), undefined)
+})
+
+test("shouldTraceRequest recognizes older opencode LLM requests without session headers", () => {
+  assert.equal(
+    shouldTraceRequest(
+      new Request("https://api.minimaxi.com/anthropic/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "secret",
+        },
+      }),
+    ),
+    true,
+  )
+  assert.equal(shouldTraceRequest(new Request("https://example.com/page", { method: "GET" })), false)
 })
 
 test("extractPromptFromRequestBody finds the first useful user prompt", () => {
@@ -106,6 +123,38 @@ test("tracedFetch writes request and response rows without consuming the respons
     assert.equal((rows[0].headers as Record<string, string>).authorization, "[REDACTED]")
     assert.equal((rows[1].headers as Record<string, string>).authorization, "[REDACTED]")
     assert.deepEqual(rows[1].body, { answer: "OK" })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("tracedFetch records likely LLM requests without opencode session headers", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const writer = new TraceWriter({
+      dir,
+      sessionID: "run_test",
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response('{"answer":"OK"}', { status: 200 })
+
+    await tracedFetch(fetchImpl, writer, "https://api.minimaxi.com/anthropic/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": "secret-request-token",
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply exactly: OK" }],
+      }),
+    })
+
+    const file = writer.pathForSession("run_test")
+    assert.ok(file)
+    const rows = await waitForRows(file, 2)
+    assert.equal(rows[0].sessionID, "run_test")
+    assert.equal(rows[0].kind, "request")
+    assert.equal(rows[1].kind, "response")
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

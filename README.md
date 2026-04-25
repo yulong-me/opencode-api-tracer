@@ -199,7 +199,13 @@ opencode-api-radar /tmp/opencode-api-tracer
 Cannot call a class constructor TraceWriter without new
 ```
 
-说明加载到了旧版本插件。强制重新安装最新版本：
+或：
+
+```text
+fn5 is not a function
+```
+
+说明加载到了旧版本插件，或 OpenCode 版本使用了不同的插件入口形态。强制重新安装最新版本：
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \

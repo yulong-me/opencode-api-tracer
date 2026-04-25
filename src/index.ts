@@ -2,24 +2,24 @@ import { installFetchTracer, type TraceWriterOptions } from "./tracer.js"
 
 let uninstall: (() => void) | undefined
 
-export function traceOptions(options: unknown): TraceWriterOptions {
+function traceOptions(options: unknown): TraceWriterOptions {
   if (!options || typeof options !== "object" || Array.isArray(options)) return {}
   const dir = (options as { dir?: unknown }).dir
   if (typeof dir !== "string" || !dir.trim()) return {}
   return { dir }
 }
 
-const server = async (_input?: unknown, options?: unknown) => {
+type PluginEntrypoint = ((input?: unknown, options?: unknown) => Promise<object>) & {
+  id?: string
+  server?: (input?: unknown, options?: unknown) => Promise<object>
+}
+
+const server: PluginEntrypoint = async (_input?: unknown, options?: unknown) => {
   uninstall ??= installFetchTracer(traceOptions(options))
   return {}
 }
 
-const entrypoint: {
-  id: string
-  server: typeof server
-} = {
-  id: "opencode-api-tracer",
-  server,
-}
+server.id = "opencode-api-tracer"
+server.server = server
 
-export default entrypoint
+export default server

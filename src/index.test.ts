@@ -1,21 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import plugin, * as entrypoint from "./index.js"
-import { traceOptions } from "./index.js"
 
-test("default export uses opencode v1 plugin object shape", () => {
-  assert.equal(typeof plugin, "object")
+test("default export is a plugin function for opencode v1.3 compatibility", () => {
+  assert.equal(typeof plugin, "function")
   assert.equal(plugin.id, "opencode-api-tracer")
   assert.equal(typeof plugin.server, "function")
 })
 
-test("traceOptions accepts plugin dir option", () => {
-  assert.deepEqual(traceOptions({ dir: "/tmp/opencode-api-tracer-test" }), { dir: "/tmp/opencode-api-tracer-test" })
-  assert.deepEqual(traceOptions({ dir: "" }), {})
-  assert.deepEqual(traceOptions(null), {})
-  assert.deepEqual(traceOptions("bad"), {})
-})
-
 test("plugin entrypoint does not expose tracer internals as named plugin candidates", () => {
-  assert.deepEqual(Object.keys(entrypoint).sort(), ["default", "traceOptions"])
+  assert.deepEqual(Object.keys(entrypoint), ["default"])
 })

@@ -55,7 +55,7 @@ test("shouldTraceRequest recognizes older opencode LLM requests without session 
         headers: { "content-type": "application/json" },
       }),
     ),
-    false,
+    true,
   )
 })
 
@@ -169,7 +169,7 @@ test("tracedFetch records likely LLM requests without opencode session headers",
   }
 })
 
-test("tracedFetch can record likely LLM requests that have no provider header when explicitly enabled", async () => {
+test("tracedFetch records likely LLM requests that have no provider header by default", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
   try {
     const debugFile = path.join(dir, "debug.jsonl")
@@ -177,7 +177,6 @@ test("tracedFetch can record likely LLM requests that have no provider header wh
       dir,
       debugFile,
       sessionID: "run_internal",
-      captureMissingProviderHeader: true,
       now: () => new Date("2026-04-25T01:00:00.000Z"),
     })
     const fetchImpl = async (_request: Request) => new Response('{"answer":"OK"}', { status: 200 })
@@ -213,7 +212,7 @@ test("tracedFetch can record likely LLM requests that have no provider header wh
   }
 })
 
-test("captureMissingProviderHeader still skips non-LLM endpoints", async () => {
+test("captureMissingProviderHeader can explicitly disable missing-provider fallback tracing", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
   try {
     const debugFile = path.join(dir, "debug.jsonl")
@@ -221,7 +220,42 @@ test("captureMissingProviderHeader still skips non-LLM endpoints", async () => {
       dir,
       debugFile,
       sessionID: "run_internal",
-      captureMissingProviderHeader: true,
+      captureMissingProviderHeader: false,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    let called = false
+    const fetchImpl = async (_request: Request) => {
+      called = true
+      return new Response("ok")
+    }
+
+    await tracedFetch(fetchImpl, writer, "https://internal.example.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply exactly: OK" }],
+      }),
+    })
+
+    assert.equal(called, true)
+    assert.equal(writer.pathForSession("run_internal"), undefined)
+    const events = readRows(debugFile)
+    assert.ok(events.some((event) => event.event === "fetch.skipped" && event.reason === "missing-provider-header"))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("missing-provider fallback still skips non-LLM endpoints", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const debugFile = path.join(dir, "debug.jsonl")
+    const writer = new TraceWriter({
+      dir,
+      debugFile,
+      sessionID: "run_internal",
       now: () => new Date("2026-04-25T01:00:00.000Z"),
     })
     let called = false

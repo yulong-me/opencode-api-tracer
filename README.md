@@ -10,7 +10,7 @@ npm 包地址：<https://www.npmjs.com/package/opencode-api-tracer>
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \
-opencode plugin opencode-api-tracer@0.1.5 --global --force
+opencode plugin opencode-api-tracer@0.1.6 --global --force
 ```
 
 安装完成后，OpenCode 会把插件写入全局配置文件：
@@ -28,7 +28,7 @@ opencode plugin opencode-api-tracer@0.1.5 --global --force
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     [
-      "opencode-api-tracer@0.1.5",
+      "opencode-api-tracer@0.1.6",
       {
         "dir": "/tmp/opencode-api-tracer"
       }
@@ -41,7 +41,7 @@ opencode plugin opencode-api-tracer@0.1.5 --global --force
 
 ```json
 {
-  "plugin": ["opencode-api-tracer@0.1.5"]
+  "plugin": ["opencode-api-tracer@0.1.6"]
 }
 ```
 
@@ -190,7 +190,7 @@ opencode-api-radar /tmp/opencode-api-tracer
 - OpenCode 1.3+ 通常会带真实 session 标记，JSONL 里的 `sessionID` 类似 `ses_...`。
 - OpenCode 1.2.x 的模型请求可能没有 session 标记，插件会用 `run_<pid>_<id>` 作为 fallback session。
 - 插件只记录带 OpenCode session 标记的请求，或明显像 LLM API 的 POST 请求；普通网页请求不会记录。
-- 内部改造版如果模型请求没有 provider header，默认会跳过；需要显式开启 `captureMissingProviderHeader`。
+- 内部改造版如果模型请求没有 provider header，只要是 POST 且 URL 像 LLM endpoint，也会默认记录。
 - 如果你使用 npm mirror，可能遇到版本同步延迟；安装和查看命令里指定 `https://registry.npmjs.org/` 最稳。
 - 查看器第一次运行时会检查 Python 依赖，缺少 `rich`、`textual`、`pygments` 或 `pyperclip` 时会尝试自动安装。
 
@@ -212,44 +212,42 @@ fn5 is not a function
 
 ```bash
 npm_config_registry=https://registry.npmjs.org/ \
-opencode plugin opencode-api-tracer@0.1.5 --global --force
+opencode plugin opencode-api-tracer@0.1.6 --global --force
 ```
 
 确认配置里只保留 npm 包名，不要同时保留旧的本地 `file://...` 插件：
 
 ```json
 {
-  "plugin": ["opencode-api-tracer@0.1.5"]
+  "plugin": ["opencode-api-tracer@0.1.6"]
 }
 ```
 
 如果 OpenCode 1.2.x 能正常运行但没有生成 JSONL，请确认版本至少是 `0.1.3`。`0.1.2` 依赖 session header，而 OpenCode 1.2.x 的模型请求可能没有这个 header。
 
-如果诊断日志里是 `reason=missing-provider-header`，说明插件已经看到了 `fetch`，但该请求没有常见模型 provider header。内部硬编码模型调用可以这样开启兼容模式：
+如果内部硬编码模型调用没有常见 provider header，`0.1.6` 起默认也会记录，只需要正常配置插件：
 
 ```json
 {
   "plugin": [
     [
-      "opencode-api-tracer@0.1.5",
+      "opencode-api-tracer@0.1.6",
       {
-        "dir": "/tmp/opencode-api-tracer",
-        "captureMissingProviderHeader": true
+        "dir": "/tmp/opencode-api-tracer"
       }
     ]
   ]
 }
 ```
 
-也可以临时用环境变量：
+也可以临时用环境变量指定输出目录：
 
 ```bash
-OPENCODE_API_TRACER_CAPTURE_MISSING_PROVIDER_HEADER=1 \
 OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer \
 opencode run "Reply exactly: OK"
 ```
 
-这个开关只放宽 provider header 检查；仍然只记录 POST 且 URL 像 `/messages`、`/chat/completions`、`/responses` 等模型 endpoint 的请求。
+默认只记录 POST 且 URL 像 `/messages`、`/chat/completions`、`/responses` 等模型 endpoint 的请求。
 
 ## 8. 诊断模式
 
@@ -305,8 +303,8 @@ opencode run "Reply exactly: OK"
 | 有 `install.patched`，但没有 `fetch.seen` | 模型请求没有走当前进程的 `globalThis.fetch`，可能走子进程、native、RPC、`http/https` 或内部服务 |
 | 有 `fetch.seen`，全是 `fetch.skipped` | 请求走了 fetch，但不符合当前过滤规则，看 `reason` |
 | `reason=method-not-post` | 不是 POST 请求 |
-| `reason=missing-provider-header` | 没有 provider/header 特征，内部模型调用可开启 `captureMissingProviderHeader` |
-| `reason=missing-provider-header-not-llm-endpoint` | 已开启兼容模式，但 URL 不像模型 endpoint |
+| `reason=missing-provider-header` | 没有 provider/header 特征，且显式关闭了无 provider header 兼容策略 |
+| `reason=missing-provider-header-not-llm-endpoint` | 没有 provider/header 特征，并且 URL 不像模型 endpoint |
 | `reason=not-llm-endpoint` | URL 不像 `/messages`、`/chat/completions`、`/responses` 等 LLM endpoint |
 | 有 `fetch.traced`，但没有 `jsonl.write.success` | 写文件失败，看 `jsonl.write.error` |
 

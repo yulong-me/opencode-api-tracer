@@ -1,6 +1,6 @@
 {
   "name": "opencode-api-tracer",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenCode plugin that traces LLM fetch request/response payloads to local JSONL files.",
   "type": "module",
   "main": "./dist/index.js",

@@ -365,7 +365,7 @@ function hasProviderHeader(headers: Headers): boolean {
   return PROVIDER_HEADERS.some((header) => !!headers.get(header))
 }
 
-function fallbackTraceReason(request: Request, captureMissingProviderHeader = false): string {
+function fallbackTraceReason(request: Request, captureMissingProviderHeader = true): string {
   if (request.method.toUpperCase() !== "POST") return "method-not-post"
   const likelyLLMEndpoint = isLikelyLLMEndpoint(request.url)
   if (!hasProviderHeader(request.headers)) {
@@ -434,7 +434,10 @@ function parseBoolean(value: string | undefined): boolean {
 
 function captureMissingProviderHeaderEnabled(options: TraceWriterOptions): boolean {
   if (typeof options.captureMissingProviderHeader === "boolean") return options.captureMissingProviderHeader
-  return parseBoolean(process.env.OPENCODE_API_TRACER_CAPTURE_MISSING_PROVIDER_HEADER)
+  if (process.env.OPENCODE_API_TRACER_CAPTURE_MISSING_PROVIDER_HEADER !== undefined) {
+    return parseBoolean(process.env.OPENCODE_API_TRACER_CAPTURE_MISSING_PROVIDER_HEADER)
+  }
+  return true
 }
 
 function diagnosticsEnabled(options: TraceWriterOptions): boolean {

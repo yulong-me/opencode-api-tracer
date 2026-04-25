@@ -48,6 +48,15 @@ test("shouldTraceRequest recognizes older opencode LLM requests without session 
     true,
   )
   assert.equal(shouldTraceRequest(new Request("https://example.com/page", { method: "GET" })), false)
+  assert.equal(
+    shouldTraceRequest(
+      new Request("https://internal.example.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      }),
+    ),
+    false,
+  )
 })
 
 test("extractPromptFromRequestBody finds the first useful user prompt", () => {
@@ -155,6 +164,84 @@ test("tracedFetch records likely LLM requests without opencode session headers",
     assert.equal(rows[0].sessionID, "run_test")
     assert.equal(rows[0].kind, "request")
     assert.equal(rows[1].kind, "response")
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("tracedFetch can record likely LLM requests that have no provider header when explicitly enabled", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const debugFile = path.join(dir, "debug.jsonl")
+    const writer = new TraceWriter({
+      dir,
+      debugFile,
+      sessionID: "run_internal",
+      captureMissingProviderHeader: true,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response('{"answer":"OK"}', { status: 200 })
+
+    await tracedFetch(fetchImpl, writer, "https://internal.example.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply exactly: OK" }],
+      }),
+    })
+
+    const file = writer.pathForSession("run_internal")
+    assert.ok(file)
+    const rows = await waitForRows(file, 2)
+    assert.equal(rows[0].sessionID, "run_internal")
+    assert.equal(rows[0].kind, "request")
+    assert.equal(rows[1].kind, "response")
+
+    const events = readRows(debugFile)
+    assert.ok(
+      events.some(
+        (event) =>
+          event.event === "fetch.traced" &&
+          event.reason === "fallback-llm-endpoint-missing-provider-header" &&
+          event.hasProviderHeader === false,
+      ),
+    )
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("captureMissingProviderHeader still skips non-LLM endpoints", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const debugFile = path.join(dir, "debug.jsonl")
+    const writer = new TraceWriter({
+      dir,
+      debugFile,
+      sessionID: "run_internal",
+      captureMissingProviderHeader: true,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    let called = false
+    const fetchImpl = async (_request: Request) => {
+      called = true
+      return new Response("ok")
+    }
+
+    await tracedFetch(fetchImpl, writer, "https://internal.example.com/health", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: "{}",
+    })
+
+    assert.equal(called, true)
+    assert.equal(writer.pathForSession("run_internal"), undefined)
+    const events = readRows(debugFile)
+    assert.ok(events.some((event) => event.event === "fetch.skipped" && event.reason === "missing-provider-header-not-llm-endpoint"))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

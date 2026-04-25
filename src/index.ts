@@ -7,10 +7,14 @@ function traceOptions(options: unknown): TraceWriterOptions {
   const dir = (options as { dir?: unknown }).dir
   const debug = (options as { debug?: unknown }).debug
   const debugFile = (options as { debugFile?: unknown; debug_file?: unknown }).debugFile ?? (options as { debug_file?: unknown }).debug_file
+  const captureMissingProviderHeader =
+    (options as { captureMissingProviderHeader?: unknown; capture_missing_provider_header?: unknown }).captureMissingProviderHeader ??
+    (options as { capture_missing_provider_header?: unknown }).capture_missing_provider_header
   return {
     ...(typeof dir === "string" && dir.trim() ? { dir } : {}),
     ...(typeof debug === "boolean" ? { debug } : {}),
     ...(typeof debugFile === "string" && debugFile.trim() ? { debugFile } : {}),
+    ...(typeof captureMissingProviderHeader === "boolean" ? { captureMissingProviderHeader } : {}),
   }
 }
 

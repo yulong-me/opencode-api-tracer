@@ -9,6 +9,7 @@ export type TraceWriterOptions = {
   sessionID?: string
   debug?: boolean
   debugFile?: string
+  captureMissingProviderHeader?: boolean
   now?: () => Date
 }
 
@@ -66,9 +67,7 @@ export function getSessionID(headers: Headers): string | undefined {
 
 export function shouldTraceRequest(request: Request): boolean {
   if (getSessionID(request.headers)) return true
-  if (request.method.toUpperCase() !== "POST") return false
-  if (!hasProviderHeader(request.headers)) return false
-  return isLikelyLLMEndpoint(request.url)
+  return isTraceFallbackReason(fallbackTraceReason(request))
 }
 
 export function extractPromptFromRequestBody(value: unknown): string | undefined {
@@ -141,6 +140,7 @@ export function parseSSE(text: string): Array<{ event?: string; data: unknown }>
 export class TraceWriter {
   private readonly dir: string
   private readonly fallbackSessionID: string
+  private readonly captureMissingProviderHeader: boolean
   private readonly now: () => Date
   private readonly diagnostics: TraceDiagnostics
   private readonly files = new Map<string, string>()
@@ -156,11 +156,13 @@ export class TraceWriter {
       options.sessionID ??
       process.env.OPENCODE_API_TRACER_SESSION_ID ??
       `run_${process.pid}_${Date.now().toString(36)}`
+    this.captureMissingProviderHeader = captureMissingProviderHeaderEnabled(options)
     this.now = options.now ?? (() => new Date())
     this.diagnostics = new TraceDiagnostics(options, this.dir, this.now)
     this.diagnostics.log("writer.created", {
       dir: this.dir,
       fallbackSessionID: this.fallbackSessionID,
+      captureMissingProviderHeader: this.captureMissingProviderHeader,
     })
   }
 
@@ -171,8 +173,8 @@ export class TraceWriter {
   traceDecisionFor(request: Request): TraceDecision {
     const sessionID = getSessionID(request.headers)
     if (sessionID) return { sessionID, reason: "session-header" }
-    const reason = fallbackTraceReason(request)
-    if (reason === "fallback-llm-endpoint") return { sessionID: this.fallbackSessionID, reason }
+    const reason = fallbackTraceReason(request, this.captureMissingProviderHeader)
+    if (isTraceFallbackReason(reason)) return { sessionID: this.fallbackSessionID, reason }
     return { reason }
   }
 
@@ -363,11 +365,20 @@ function hasProviderHeader(headers: Headers): boolean {
   return PROVIDER_HEADERS.some((header) => !!headers.get(header))
 }
 
-function fallbackTraceReason(request: Request): string {
+function fallbackTraceReason(request: Request, captureMissingProviderHeader = false): string {
   if (request.method.toUpperCase() !== "POST") return "method-not-post"
-  if (!hasProviderHeader(request.headers)) return "missing-provider-header"
-  if (!isLikelyLLMEndpoint(request.url)) return "not-llm-endpoint"
+  const likelyLLMEndpoint = isLikelyLLMEndpoint(request.url)
+  if (!hasProviderHeader(request.headers)) {
+    if (!captureMissingProviderHeader) return "missing-provider-header"
+    if (!likelyLLMEndpoint) return "missing-provider-header-not-llm-endpoint"
+    return "fallback-llm-endpoint-missing-provider-header"
+  }
+  if (!likelyLLMEndpoint) return "not-llm-endpoint"
   return "fallback-llm-endpoint"
+}
+
+function isTraceFallbackReason(reason: string): boolean {
+  return reason === "fallback-llm-endpoint" || reason === "fallback-llm-endpoint-missing-provider-header"
 }
 
 function isLikelyLLMEndpoint(url: string): boolean {
@@ -419,6 +430,11 @@ function writerOutputDir(writer: TraceWriter): string {
 function parseBoolean(value: string | undefined): boolean {
   if (!value) return false
   return ["1", "true", "yes", "on"].includes(value.toLowerCase())
+}
+
+function captureMissingProviderHeaderEnabled(options: TraceWriterOptions): boolean {
+  if (typeof options.captureMissingProviderHeader === "boolean") return options.captureMissingProviderHeader
+  return parseBoolean(process.env.OPENCODE_API_TRACER_CAPTURE_MISSING_PROVIDER_HEADER)
 }
 
 function diagnosticsEnabled(options: TraceWriterOptions): boolean {

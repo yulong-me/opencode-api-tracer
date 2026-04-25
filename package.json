@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "exports": "./dist/index.js",
   "bin": {
-    "opencode-api-radar": "./scripts/opencode_api_radar.py"
+    "opencode-api-radar": "./scripts/opencode_api_radar.py",
+    "opencode-api-tracer": "./scripts/opencode_api_radar.py"
   },
   "files": [
     "dist/index.js",
@@ -17,11 +18,16 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test dist/*.test.js && npm run test:viewer",
     "test:viewer": "python3 -m unittest discover -s scripts -p '*_test.py'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test && npm run typecheck"
   },
   "keywords": [
     "opencode",

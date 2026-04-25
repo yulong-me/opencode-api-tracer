@@ -190,3 +190,26 @@ opencode-api-radar /tmp/opencode-api-tracer
 - 默认只记录带 OpenCode session 标记的请求。
 - 如果你使用 npm mirror，可能遇到版本同步延迟；安装和查看命令里指定 `https://registry.npmjs.org/` 最稳。
 - 查看器第一次运行时会检查 Python 依赖，缺少 `rich`、`textual`、`pygments` 或 `pyperclip` 时会尝试自动安装。
+
+## 7. 常见问题
+
+如果 OpenCode log 里出现：
+
+```text
+Cannot call a class constructor TraceWriter without new
+```
+
+说明加载到了旧版本插件。强制重新安装最新版本：
+
+```bash
+npm_config_registry=https://registry.npmjs.org/ \
+opencode plugin opencode-api-tracer --global --force
+```
+
+确认配置里只保留 npm 包名，不要同时保留旧的本地 `file://...` 插件：
+
+```json
+{
+  "plugin": ["opencode-api-tracer"]
+}
+```

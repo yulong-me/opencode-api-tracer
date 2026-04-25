@@ -23,4 +23,3 @@ const entrypoint: {
 }
 
 export default entrypoint
-export * from "./tracer.js"

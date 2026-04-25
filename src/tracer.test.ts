@@ -160,6 +160,68 @@ test("tracedFetch records likely LLM requests without opencode session headers",
   }
 })
 
+test("diagnostics explain skipped fetches without recording sensitive values", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const debugFile = path.join(dir, "debug.jsonl")
+    const writer = new TraceWriter({
+      dir,
+      debugFile,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response("ok")
+
+    await tracedFetch(fetchImpl, writer, "https://example.com/page", {
+      method: "GET",
+      headers: {
+        authorization: "secret-request-token",
+      },
+    })
+
+    const events = readRows(debugFile)
+    assert.ok(events.some((event) => event.event === "fetch.seen"))
+    assert.ok(events.some((event) => event.event === "fetch.skipped" && event.reason === "method-not-post"))
+    assert.equal(JSON.stringify(events).includes("secret-request-token"), false)
+    assert.deepEqual(events.find((event) => event.event === "fetch.seen")?.headerNames, ["authorization"])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("diagnostics record jsonl writes for traced requests", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const debugFile = path.join(dir, "debug.jsonl")
+    const writer = new TraceWriter({
+      dir,
+      debugFile,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response('{"answer":"OK"}')
+
+    await tracedFetch(fetchImpl, writer, "https://api.example.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-opencode-session": "ses_debug",
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Reply exactly: OK" }],
+      }),
+    })
+
+    const file = writer.pathForSession("ses_debug")
+    assert.ok(file)
+    await waitForRows(file, 2)
+    const events = readRows(debugFile)
+
+    assert.ok(events.some((event) => event.event === "fetch.traced" && event.reason === "session-header"))
+    assert.equal(events.filter((event) => event.event === "jsonl.write.success").length, 2)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 async function waitForRows(file: string, count: number): Promise<Array<Record<string, unknown>>> {
   const deadline = Date.now() + 500
   while (Date.now() < deadline) {
@@ -173,4 +235,12 @@ async function waitForRows(file: string, count: number): Promise<Array<Record<st
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
+function readRows(file: string): Array<Record<string, any>> {
+  return readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, any>)
 }

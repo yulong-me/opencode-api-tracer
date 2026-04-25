@@ -5,8 +5,13 @@ let uninstall: (() => void) | undefined
 function traceOptions(options: unknown): TraceWriterOptions {
   if (!options || typeof options !== "object" || Array.isArray(options)) return {}
   const dir = (options as { dir?: unknown }).dir
-  if (typeof dir !== "string" || !dir.trim()) return {}
-  return { dir }
+  const debug = (options as { debug?: unknown }).debug
+  const debugFile = (options as { debugFile?: unknown; debug_file?: unknown }).debugFile ?? (options as { debug_file?: unknown }).debug_file
+  return {
+    ...(typeof dir === "string" && dir.trim() ? { dir } : {}),
+    ...(typeof debug === "boolean" ? { debug } : {}),
+    ...(typeof debugFile === "string" && debugFile.trim() ? { debugFile } : {}),
+  }
 }
 
 type PluginEntrypoint = ((input?: unknown, options?: unknown) => Promise<object>) & {

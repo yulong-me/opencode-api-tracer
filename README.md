@@ -223,3 +223,44 @@ opencode plugin opencode-api-tracer@0.1.3 --global --force
 ```
 
 如果 OpenCode 1.2.x 能正常运行但没有生成 JSONL，请确认版本至少是 `0.1.3`。`0.1.2` 依赖 session header，而 OpenCode 1.2.x 的模型请求可能没有这个 header。
+
+## 8. 诊断模式
+
+如果插件配上了但没有生成 JSONL，可以打开诊断日志：
+
+```bash
+OPENCODE_API_TRACER_DEBUG=1 \
+OPENCODE_API_TRACER_DEBUG_FILE=/tmp/opencode-api-tracer.debug.jsonl \
+OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer \
+opencode run "Reply exactly: OK"
+```
+
+诊断日志只记录元信息，不记录请求 body，也不记录 header 值。它会记录：
+
+- 插件是否初始化：`install.start`
+- 是否成功 patch `globalThis.fetch`：`install.patched`
+- 是否看到了 fetch 调用：`fetch.seen`
+- 是否追踪该请求：`fetch.traced`
+- 如果跳过，为什么跳过：`fetch.skipped`
+- JSONL 是否写入成功：`jsonl.write.success`
+- 进程退出前的计数：`process.summary`
+
+快速查看：
+
+```bash
+tail -n 50 /tmp/opencode-api-tracer.debug.jsonl
+```
+
+常见判断：
+
+| 诊断日志现象 | 含义 |
+|---|---|
+| 没有 `install.start` | 插件没有被 OpenCode 加载，先检查 `opencode.json` 的 `plugin` |
+| 有 `install.patched`，但没有 `fetch.seen` | 模型请求没有走当前进程的 `globalThis.fetch`，可能走子进程、native、RPC、`http/https` 或内部服务 |
+| 有 `fetch.seen`，全是 `fetch.skipped` | 请求走了 fetch，但不符合当前过滤规则，看 `reason` |
+| `reason=method-not-post` | 不是 POST 请求 |
+| `reason=missing-provider-header` | 没有 provider/header 特征，可能内部模型调用没有透出 key/header |
+| `reason=not-llm-endpoint` | URL 不像 `/messages`、`/chat/completions`、`/responses` 等 LLM endpoint |
+| 有 `fetch.traced`，但没有 `jsonl.write.success` | 写文件失败，看 `jsonl.write.error` |
+
+如果只有 `install.patched` 没有任何 `fetch.seen`，这个插件层已经无法证明真实网络请求内容；下一步要么在内部 OpenCode 源码的模型调用处埋点，要么使用代理/MITM 或更底层的 `http/https/undici` hook。

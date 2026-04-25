@@ -421,6 +421,12 @@ function parseBoolean(value: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase())
 }
 
+function diagnosticsEnabled(options: TraceWriterOptions): boolean {
+  if (typeof options.debug === "boolean") return options.debug
+  if (process.env.OPENCODE_API_TRACER_DEBUG !== undefined) return parseBoolean(process.env.OPENCODE_API_TRACER_DEBUG)
+  return true
+}
+
 function defaultTraceDir(options: TraceWriterOptions = {}): string {
   return (
     options.dir ??
@@ -451,7 +457,7 @@ class TraceDiagnostics {
   }
 
   constructor(options: TraceWriterOptions = {}, traceDir = defaultTraceDir(options), now: () => Date = () => new Date(), registerSummary = true) {
-    this.enabled = !!options.debug || parseBoolean(process.env.OPENCODE_API_TRACER_DEBUG) || !!options.debugFile || !!process.env.OPENCODE_API_TRACER_DEBUG_FILE
+    this.enabled = diagnosticsEnabled(options) || !!options.debugFile || !!process.env.OPENCODE_API_TRACER_DEBUG_FILE
     this.file =
       options.debugFile ??
       process.env.OPENCODE_API_TRACER_DEBUG_FILE ??

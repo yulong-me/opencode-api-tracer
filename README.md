@@ -226,11 +226,15 @@ opencode plugin opencode-api-tracer@0.1.3 --global --force
 
 ## 8. 诊断模式
 
-如果插件配上了但没有生成 JSONL，可以打开诊断日志：
+插件默认会写诊断日志，位置在 trace 目录下：
+
+```text
+/tmp/opencode-api-tracer/opencode-api-tracer.debug.jsonl
+```
+
+运行：
 
 ```bash
-OPENCODE_API_TRACER_DEBUG=1 \
-OPENCODE_API_TRACER_DEBUG_FILE=/tmp/opencode-api-tracer.debug.jsonl \
 OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer \
 opencode run "Reply exactly: OK"
 ```
@@ -248,7 +252,22 @@ opencode run "Reply exactly: OK"
 快速查看：
 
 ```bash
-tail -n 50 /tmp/opencode-api-tracer.debug.jsonl
+tail -n 50 /tmp/opencode-api-tracer/opencode-api-tracer.debug.jsonl
+```
+
+如果要指定诊断日志路径：
+
+```bash
+OPENCODE_API_TRACER_DEBUG_FILE=/tmp/opencode-api-tracer.debug.jsonl \
+OPENCODE_API_TRACER_DIR=/tmp/opencode-api-tracer \
+opencode run "Reply exactly: OK"
+```
+
+如果要关闭诊断日志：
+
+```bash
+OPENCODE_API_TRACER_DEBUG=0 \
+opencode run "Reply exactly: OK"
 ```
 
 常见判断：

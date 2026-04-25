@@ -188,6 +188,47 @@ test("diagnostics explain skipped fetches without recording sensitive values", a
   }
 })
 
+test("diagnostics are enabled by default in the trace directory", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const writer = new TraceWriter({
+      dir,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response("ok")
+
+    await tracedFetch(fetchImpl, writer, "https://example.com/page", {
+      method: "GET",
+    })
+
+    const events = readRows(path.join(dir, "opencode-api-tracer.debug.jsonl"))
+    assert.ok(events.some((event) => event.event === "writer.created"))
+    assert.ok(events.some((event) => event.event === "fetch.skipped" && event.reason === "method-not-post"))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test("diagnostics can be disabled explicitly", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
+  try {
+    const writer = new TraceWriter({
+      dir,
+      debug: false,
+      now: () => new Date("2026-04-25T01:00:00.000Z"),
+    })
+    const fetchImpl = async (_request: Request) => new Response("ok")
+
+    await tracedFetch(fetchImpl, writer, "https://example.com/page", {
+      method: "GET",
+    })
+
+    assert.throws(() => readRows(path.join(dir, "opencode-api-tracer.debug.jsonl")))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test("diagnostics record jsonl writes for traced requests", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "opencode-api-tracer-"))
   try {
